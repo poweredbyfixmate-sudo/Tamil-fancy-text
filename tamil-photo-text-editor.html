@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tamil Photo Text Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root { --bg:#0a0e1a; --panel:#12172a; --panel2:#171d33; --border:#242b45; --orange:#ff7a1a; --orange-dim:rgba(255,122,26,0.15); --text:#f0f2f8; --sub:#8b93ac; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:var(--bg); color:var(--text); font-family:'Segoe UI', Arial, sans-serif; min-height:100vh; overflow-x:hidden; }
+  #app { max-width:720px; margin:0 auto; padding:16px 16px 30px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  header h1 { font-size:18px; color:var(--orange); }
+
+  .toolstrip { display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; margin-bottom:14px; }
+  .tool-btn {
+    flex:0 0 auto; background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:9px 14px; border-radius:8px; font-size:12px; cursor:pointer; white-space:nowrap;
+  }
+  .tool-btn.primary { background:var(--orange); color:#000; font-weight:700; border-color:var(--orange); }
+  input[type=file] { display:none; }
+
+  #aspectRow { display:flex; gap:6px; margin-bottom:12px; }
+  .aspect-chip { flex:1; text-align:center; font-size:11px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--sub); cursor:pointer; }
+  .aspect-chip.active { background:var(--orange-dim); color:var(--orange); border-color:var(--orange); }
+
+  #stageOuter {
+    position:relative; margin:0 auto 14px; overflow:hidden; border-radius:12px; border:1px solid var(--border);
+    background:#111; touch-action:none;
+  }
+  #stageInner { position:absolute; top:0; left:0; transform-origin:top left; }
+  #stageImg { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none; }
+
+  .text-layer {
+    position:absolute; cursor:move; padding:4px 8px; white-space:pre-wrap; user-select:none;
+    transform-origin:center center; line-height:1.25;
+  }
+  .text-layer.selected { outline:2px dashed rgba(255,122,26,0.9); outline-offset:4px; }
+
+  #fontListWrap { font-size:11px; color:var(--sub); margin-bottom:12px; }
+  #fontListWrap .fitem { display:inline-block; background:var(--panel); border:1px solid var(--border); padding:4px 10px; border-radius:10px; margin:2px 4px 2px 0; }
+
+  #emptyStageMsg {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--sub); font-size:13px; padding:20px; pointer-events:none;
+  }
+
+  /* ---- Toolbar (layer edit panel) ---- */
+  #layerPanel {
+    display:none; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:10px;
+  }
+  #layerPanel.active { display:block; }
+  #layerPanel textarea {
+    width:100%; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:8px;
+    padding:10px; font-size:15px; resize:none; min-height:50px; margin-bottom:12px; outline:none;
+  }
+  .prow { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px; }
+  .pgroup { flex:1; min-width:120px; display:flex; flex-direction:column; gap:5px; }
+  .pgroup label { font-size:10px; color:var(--sub); text-transform:uppercase; letter-spacing:0.4px; display:flex; justify-content:space-between; }
+  .pgroup label .v { color:var(--orange); text-transform:none; }
+  .pgroup input[type=range] { width:100%; }
+  .pgroup select { background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:12px; }
+  .pgroup input[type=color] { width:100%; height:36px; border:1px solid var(--border); border-radius:6px; background:var(--panel2); padding:2px; cursor:pointer; }
+
+  .style-toggle-row { display:flex; gap:8px; margin-bottom:12px; }
+  .style-toggle { flex:1; text-align:center; padding:9px; border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--sub); cursor:pointer; font-weight:700; font-size:13px; }
+  .style-toggle.active { background:var(--orange); color:#000; border-color:var(--orange); }
+
+  .layer-actions { display:flex; gap:8px; }
+  .layer-actions button { flex:1; padding:10px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; border:none; }
+  #frontBtn, #duplicateBtn { background:var(--panel2); color:var(--text); border:1px solid var(--border) !important; }
+  #deleteLayerBtn { background:rgba(255,80,80,0.15); color:#ff6666; border:1px solid rgba(255,80,80,0.4) !important; }
+
+  #exportRow { display:flex; gap:10px; margin-top:16px; }
+  #exportRow button { flex:1; padding:14px; border-radius:10px; font-size:14px; font-weight:700; border:none; cursor:pointer; }
+  #downloadBtn { background:var(--orange); color:#000; }
+  #shareBtn { background:#25D366; color:#fff; }
+
+  #errorBox { display:none; background:#2a0d0d; border:1px solid #ff4444; color:#ff9999; padding:12px 14px; border-radius:8px; margin-top:14px; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🎨 Tamil Photo Text Editor</h1>
+  </header>
+
+  <div class="toolstrip">
+    <button class="tool-btn primary" id="uploadPhotoBtn">🖼 Upload Photo</button>
+    <button class="tool-btn" id="uploadFontBtn">🔤 Upload Tamil Font (.ttf)</button>
+    <button class="tool-btn" id="addTextBtn">+ Add Text</button>
+    <button class="tool-btn" id="bgColorPickerBtn">🎨 BG Color</button>
+  </div>
+  <input type="file" id="photoInput" accept="image/*">
+  <input type="file" id="fontInput" accept=".ttf,.otf,font/ttf,font/otf" multiple>
+  <input type="color" id="bgColorPicker" value="#12172a" style="display:none;">
+
+  <div id="aspectRow">
+    <div class="aspect-chip active" data-ratio="1080:1080">Square</div>
+    <div class="aspect-chip" data-ratio="1080:1350">Post 4:5</div>
+    <div class="aspect-chip" data-ratio="1080:1920">Story 9:16</div>
+  </div>
+
+  <div id="fontListWrap">No custom fonts uploaded yet — using default font.</div>
+
+  <div id="stageOuter">
+    <div id="stageInner">
+      <img id="stageImg" style="display:none;">
+      <div id="emptyStageMsg">Photo upload பண்ணுங்க அல்லது நேரடியா text சேருங்க 👆</div>
+    </div>
+  </div>
+
+  <!-- ================= LAYER EDIT PANEL ================= -->
+  <div id="layerPanel">
+    <textarea id="pText" placeholder="உங்கள் வாசகம்..."></textarea>
+
+    <div class="prow">
+      <div class="pgroup">
+        <label>Font</label>
+        <select id="pFont">
+          <option value="'Noto Sans Tamil', sans-serif">Default Tamil</option>
+        </select>
+      </div>
+      <div class="pgroup">
+        <label>Size <span class="v" id="pSizeVal">60px</span></label>
+        <input type="range" id="pSize" min="16" max="200" value="60" step="2">
+      </div>
+    </div>
+
+    <div class="prow">
+      <div class="pgroup"><label>Text Colour</label><input type="color" id="pColor" value="#ffffff"></div>
+      <div class="pgroup"><label>Outline Colour</label><input type="color" id="pStrokeColor" value="#000000"></div>
+    </div>
+
+    <div class="prow">
+      <div class="pgroup">
+        <label>Outline Width <span class="v" id="pStrokeVal">0px</span></label>
+        <input type="range" id="pStrokeWidth" min="0" max="10" value="0" step="0.5">
+      </div>
+      <div class="pgroup">
+        <label>Rotation <span class="v" id="pRotVal">0°</span></label>
+        <input type="range" id="pRotation" min="-180" max="180" value="0" step="1">
+      </div>
+    </div>
+
+    <div class="prow">
+      <div class="pgroup">
+        <label>Opacity <span class="v" id="pOpacityVal">100%</span></label>
+        <input type="range" id="pOpacity" min="10" max="100" value="100" step="5">
+      </div>
+      <div class="pgroup">
+        <label>Letter Spacing <span class="v" id="pSpacingVal">0px</span></label>
+        <input type="range" id="pSpacing" min="0" max="20" value="0" step="1">
+      </div>
+    </div>
+
+    <div class="style-toggle-row">
+      <div class="style-toggle" id="pBold">Bold</div>
+      <div class="style-toggle" id="pItalic">Italic</div>
+      <div class="style-toggle" id="pShadow">Shadow</div>
+    </div>
+
+    <div class="layer-actions">
+      <button id="frontBtn">⬆ Bring Front</button>
+      <button id="duplicateBtn">⧉ Duplicate</button>
+      <button id="deleteLayerBtn">🗑 Delete</button>
+    </div>
+  </div>
+
+  <div id="exportRow">
+    <button id="downloadBtn">⬇ Save Image</button>
+    <button id="shareBtn">📤 WhatsApp</button>
+  </div>
+  <div id="errorBox"></div>
+</div>
+
+<script>
+(function(){
+  const stageOuter = document.getElementById('stageOuter');
+  const stageInner = document.getElementById('stageInner');
+  const stageImg = document.getElementById('stageImg');
+  const emptyStageMsg = document.getElementById('emptyStageMsg');
+  const photoInput = document.getElementById('photoInput');
+  const fontInput = document.getElementById('fontInput');
+  const bgColorPicker = document.getElementById('bgColorPicker');
+  const fontListWrap = document.getElementById('fontListWrap');
+  const errorBox = document.getElementById('errorBox');
+
+  function showError(msg) { errorBox.textContent = msg; errorBox.style.display = 'block'; setTimeout(()=>errorBox.style.display='none', 4000); }
+
+  // ---------- Stage sizing ----------
+  let nativeW = 1080, nativeH = 1080;
+  let displayScale = 1;
+  let hasPhoto = false;
+
+  function setStageSize(w, h) {
+    nativeW = w; nativeH = h;
+    stageInner.style.width = nativeW + 'px';
+    stageInner.style.height = nativeH + 'px';
+    recomputeDisplayScale();
+  }
+
+  function recomputeDisplayScale() {
+    const maxDisplayWidth = Math.min(560, window.innerWidth - 32);
+    displayScale = maxDisplayWidth / nativeW;
+    stageOuter.style.width = maxDisplayWidth + 'px';
+    stageOuter.style.height = (nativeH * displayScale) + 'px';
+    stageInner.style.transform = 'scale(' + displayScale + ')';
+  }
+  window.addEventListener('resize', recomputeDisplayScale);
+
+  document.querySelectorAll('.aspect-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (hasPhoto) { if (!confirm('Change canvas shape? Your photo will be re-fit.')) return; }
+      document.querySelectorAll('.aspect-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const [w,h] = chip.dataset.ratio.split(':').map(Number);
+      setStageSize(w,h);
+    });
+  });
+
+  setStageSize(1080,1080);
+
+  // ---------- Photo upload ----------
+  document.getElementById('uploadPhotoBtn').addEventListener('click', () => photoInput.click());
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1400;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > MAX || h > MAX) { const s = MAX / Math.max(w,h); w = Math.round(w*s); h = Math.round(h*s); }
+      setStageSize(w, h);
+      stageImg.src = img.src;
+      stageImg.style.display = 'block';
+      emptyStageMsg.style.display = 'none';
+      hasPhoto = true;
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+  // ---------- Background color (used when no photo) ----------
+  document.getElementById('bgColorPickerBtn').addEventListener('click', () => bgColorPicker.click());
+  bgColorPicker.addEventListener('input', () => { stageOuter.style.background = bgColorPicker.value; });
+
+  // ---------- Font upload ----------
+  const pFont = document.getElementById('pFont');
+  let fontCounter = 0;
+  document.getElementById('uploadFontBtn').addEventListener('click', () => fontInput.click());
+  fontInput.addEventListener('change', async () => {
+    const files = Array.from(fontInput.files);
+    for (const file of files) {
+      try {
+        const buf = await file.arrayBuffer();
+        fontCounter++;
+        const family = 'CustomFont' + fontCounter;
+        const face = new FontFace(family, buf);
+        await face.load();
+        document.fonts.add(face);
+        const opt = document.createElement('option');
+        opt.value = "'" + family + "'";
+        opt.textContent = file.name.replace(/\.(ttf|otf)$/i, '');
+        pFont.appendChild(opt);
+        pFont.value = opt.value;
+        if (fontListWrap.textContent.startsWith('No custom')) fontListWrap.innerHTML = '';
+        const chip = document.createElement('span');
+        chip.className = 'fitem';
+        chip.textContent = opt.textContent;
+        fontListWrap.appendChild(chip);
+        if (selectedLayerId) { updateLayer(selectedLayerId, { fontFamily: opt.value }); }
+      } catch (err) {
+        showError('Font load failed for ' + file.name + ': ' + err.message);
+      }
+    }
+  });
+
+  // ---------- Layers ----------
+  let layers = [];
+  let selectedLayerId = null;
+  let zCounter = 1;
+
+  function uid() { return 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+  function createLayer(initial) {
+    const layer = Object.assign({
+      id: uid(), text: 'உங்கள் வாசகம்', fontFamily: "'Noto Sans Tamil', sans-serif",
+      fontSize: 60, color: '#ffffff', strokeColor: '#000000', strokeWidth: 0,
+      rotation: 0, opacity: 100, bold:false, italic:false, shadow:true, spacing:0,
+      x: nativeW/2 - 150, y: nativeH/2 - 40, z: zCounter++
+    }, initial || {});
+    layers.push(layer);
+
+    const div = document.createElement('div');
+    div.className = 'text-layer';
+    div.dataset.id = layer.id;
+    stageInner.appendChild(div);
+
+    attachDrag(div, layer);
+    div.addEventListener('pointerdown', () => selectLayer(layer.id));
+    renderLayer(layer);
+    return layer;
+  }
+
+  function getLayerDiv(id) { return stageInner.querySelector('.text-layer[data-id="' + id + '"]'); }
+
+  function renderLayer(layer) {
+    const div = getLayerDiv(layer.id);
+    if (!div) return;
+    div.textContent = layer.text;
+    div.style.left = layer.x + 'px';
+    div.style.top = layer.y + 'px';
+    div.style.fontFamily = layer.fontFamily;
+    div.style.fontSize = layer.fontSize + 'px';
+    div.style.color = layer.color;
+    div.style.fontWeight = layer.bold ? '800' : '400';
+    div.style.fontStyle = layer.italic ? 'italic' : 'normal';
+    div.style.opacity = layer.opacity / 100;
+    div.style.letterSpacing = layer.spacing + 'px';
+    div.style.transform = 'rotate(' + layer.rotation + 'deg)';
+    div.style.zIndex = layer.z;
+    div.style.webkitTextStroke = layer.strokeWidth > 0 ? layer.strokeWidth + 'px ' + layer.strokeColor : '';
+    div.style.textShadow = layer.shadow ? '0 2px 6px rgba(0,0,0,0.7)' : 'none';
+    div.classList.toggle('selected', layer.id === selectedLayerId);
+  }
+
+  function updateLayer(id, changes) {
+    const layer = layers.find(l => l.id === id);
+    if (!layer) return;
+    Object.assign(layer, changes);
+    renderLayer(layer);
+  }
+
+  function deleteLayer(id) {
+    layers = layers.filter(l => l.id !== id);
+    const div = getLayerDiv(id);
+    if (div) div.remove();
+    if (selectedLayerId === id) { selectedLayerId = null; layerPanel.classList.remove('active'); }
+  }
+
+  // ---------- Drag ----------
+  function attachDrag(div, layer) {
+    let dragging = false, startX=0, startY=0, startLX=0, startLY=0;
+    div.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      div.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      const l = layers.find(x => x.id === layer.id);
+      startLX = l.x; startLY = l.y;
+    });
+    div.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = (e.clientX - startX) / displayScale;
+      const dy = (e.clientY - startY) / displayScale;
+      const l = layers.find(x => x.id === layer.id);
+      l.x = startLX + dx; l.y = startLY + dy;
+      renderLayer(l);
+    });
+    function endDrag(e) { dragging = false; }
+    div.addEventListener('pointerup', endDrag);
+    div.addEventListener('pointercancel', endDrag);
+  }
+
+  stageInner.addEventListener('pointerdown', (e) => {
+    if (e.target === stageInner || e.target === stageImg || e.target === emptyStageMsg) {
+      selectedLayerId = null;
+      layers.forEach(renderLayer);
+      layerPanel.classList.remove('active');
+    }
+  });
+
+  // ---------- Add / select ----------
+  document.getElementById('addTextBtn').addEventListener('click', () => {
+    const layer = createLayer(null);
+    selectLayer(layer.id);
+  });
+
+  const layerPanel = document.getElementById('layerPanel');
+  const pText = document.getElementById('pText');
+  const pSize = document.getElementById('pSize'), pSizeVal = document.getElementById('pSizeVal');
+  const pColor = document.getElementById('pColor');
+  const pStrokeColor = document.getElementById('pStrokeColor');
+  const pStrokeWidth = document.getElementById('pStrokeWidth'), pStrokeVal = document.getElementById('pStrokeVal');
+  const pRotation = document.getElementById('pRotation'), pRotVal = document.getElementById('pRotVal');
+  const pOpacity = document.getElementById('pOpacity'), pOpacityVal = document.getElementById('pOpacityVal');
+  const pSpacing = document.getElementById('pSpacing'), pSpacingVal = document.getElementById('pSpacingVal');
+  const pBold = document.getElementById('pBold'), pItalic = document.getElementById('pItalic'), pShadow = document.getElementById('pShadow');
+
+  function selectLayer(id) {
+    selectedLayerId = id;
+    layers.forEach(renderLayer);
+    const l = layers.find(x => x.id === id);
+    if (!l) return;
+    pText.value = l.text;
+    pFont.value = l.fontFamily;
+    pSize.value = l.fontSize; pSizeVal.textContent = l.fontSize + 'px';
+    pColor.value = l.color;
+    pStrokeColor.value = l.strokeColor;
+    pStrokeWidth.value = l.strokeWidth; pStrokeVal.textContent = l.strokeWidth + 'px';
+    pRotation.value = l.rotation; pRotVal.textContent = l.rotation + '°';
+    pOpacity.value = l.opacity; pOpacityVal.textContent = l.opacity + '%';
+    pSpacing.value = l.spacing; pSpacingVal.textContent = l.spacing + 'px';
+    pBold.classList.toggle('active', l.bold);
+    pItalic.classList.toggle('active', l.italic);
+    pShadow.classList.toggle('active', l.shadow);
+    layerPanel.classList.add('active');
+  }
+
+  pText.addEventListener('input', () => updateLayer(selectedLayerId, { text: pText.value || ' ' }));
+  pFont.addEventListener('change', () => updateLayer(selectedLayerId, { fontFamily: pFont.value }));
+  pSize.addEventListener('input', () => { pSizeVal.textContent = pSize.value+'px'; updateLayer(selectedLayerId, { fontSize: parseInt(pSize.value,10) }); });
+  pColor.addEventListener('input', () => updateLayer(selectedLayerId, { color: pColor.value }));
+  pStrokeColor.addEventListener('input', () => updateLayer(selectedLayerId, { strokeColor: pStrokeColor.value }));
+  pStrokeWidth.addEventListener('input', () => { pStrokeVal.textContent = pStrokeWidth.value+'px'; updateLayer(selectedLayerId, { strokeWidth: parseFloat(pStrokeWidth.value) }); });
+  pRotation.addEventListener('input', () => { pRotVal.textContent = pRotation.value+'°'; updateLayer(selectedLayerId, { rotation: parseInt(pRotation.value,10) }); });
+  pOpacity.addEventListener('input', () => { pOpacityVal.textContent = pOpacity.value+'%'; updateLayer(selectedLayerId, { opacity: parseInt(pOpacity.value,10) }); });
+  pSpacing.addEventListener('input', () => { pSpacingVal.textContent = pSpacing.value+'px'; updateLayer(selectedLayerId, { spacing: parseInt(pSpacing.value,10) }); });
+  pBold.addEventListener('click', () => { const l = layers.find(x=>x.id===selectedLayerId); updateLayer(selectedLayerId, { bold: !l.bold }); pBold.classList.toggle('active'); });
+  pItalic.addEventListener('click', () => { const l = layers.find(x=>x.id===selectedLayerId); updateLayer(selectedLayerId, { italic: !l.italic }); pItalic.classList.toggle('active'); });
+  pShadow.addEventListener('click', () => { const l = layers.find(x=>x.id===selectedLayerId); updateLayer(selectedLayerId, { shadow: !l.shadow }); pShadow.classList.toggle('active'); });
+
+  document.getElementById('frontBtn').addEventListener('click', () => updateLayer(selectedLayerId, { z: zCounter++ }));
+  document.getElementById('duplicateBtn').addEventListener('click', () => {
+    const l = layers.find(x => x.id === selectedLayerId);
+    if (!l) return;
+    const copy = Object.assign({}, l, { id: undefined, x: l.x+20, y: l.y+20 });
+    delete copy.id;
+    const newLayer = createLayer(copy);
+    selectLayer(newLayer.id);
+  });
+  document.getElementById('deleteLayerBtn').addEventListener('click', () => {
+    if (!selectedLayerId) return;
+    deleteLayer(selectedLayerId);
+    layerPanel.classList.remove('active');
+  });
+
+  // ---------- Export ----------
+  async function renderExportCanvas() {
+    const prevTransform = stageInner.style.transform;
+    const prevOuterOverflow = stageOuter.style.overflow;
+    const prevOuterW = stageOuter.style.width, prevOuterH = stageOuter.style.height;
+    stageInner.style.transform = 'none';
+    stageOuter.style.overflow = 'visible';
+    stageOuter.style.width = nativeW + 'px';
+    stageOuter.style.height = nativeH + 'px';
+    document.querySelectorAll('.text-layer').forEach(d => d.classList.remove('selected'));
+
+    let canvas;
+    try {
+      canvas = await html2canvas(stageInner, { backgroundColor: hasPhoto ? null : bgColorPicker.value, width: nativeW, height: nativeH, scale: 1, useCORS: true });
+    } finally {
+      stageInner.style.transform = prevTransform;
+      stageOuter.style.overflow = prevOuterOverflow;
+      stageOuter.style.width = prevOuterW;
+      stageOuter.style.height = prevOuterH;
+      layers.forEach(renderLayer);
+    }
+    return canvas;
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', async () => {
+    try {
+      const canvas = await renderExportCanvas();
+      const a = document.createElement('a');
+      a.download = 'tamil-text-design-' + Date.now() + '.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    } catch (err) { showError('Export failed: ' + err.message); }
+  });
+
+  document.getElementById('shareBtn').addEventListener('click', async () => {
+    try {
+      const canvas = await renderExportCanvas();
+      canvas.toBlob(async (blob) => {
+        const file = new File([blob], 'tamil-text-design.png', { type:'image/png' });
+        if (navigator.canShare && navigator.canShare({ files:[file] })) {
+          try { await navigator.share({ files:[file], title:'Tamil Text Design' }); } catch(e) {}
+        } else {
+          const a = document.createElement('a');
+          a.download = 'tamil-text-design-' + Date.now() + '.png';
+          a.href = canvas.toDataURL('image/png');
+          a.click();
+          window.open('https://wa.me/919025156687', '_blank');
+        }
+      }, 'image/png');
+    } catch (err) { showError('Share failed: ' + err.message); }
+  });
+})();
+</script>
+</body>
+</html>
